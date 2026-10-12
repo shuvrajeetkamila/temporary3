@@ -141,7 +141,34 @@ def stitch_coastline(segments: list[list[tuple[float, float]]]) -> list[tuple[fl
         if len(ring) >= 4 and math.dist(ring[0], ring[-1]) <= eps:
             closed.append(ring)
     if not closed:
-        raise ValueError("OSM response did not contain a closed Nauru coastline ring")
+        endpoints = []
+        segment_report = []
+        for index, segment in enumerate(segments):
+            if len(segment) < 2:
+                continue
+            start, end = segment[0], segment[-1]
+            endpoints.extend(((start[0], start[1], index, "start"),
+                              (end[0], end[1], index, "end")))
+            segment_report.append({"index": index, "points": len(segment),
+                                   "start": [round(start[0], 7), round(start[1], 7)],
+                                   "end": [round(end[0], 7), round(end[1], 7)]})
+        nearest = []
+        for i, a in enumerate(endpoints):
+            for b in endpoints[i + 1:]:
+                if a[2] == b[2]:
+                    continue
+                mean_lat = math.radians((a[0] + b[0]) * 0.5)
+                north_m = (a[0] - b[0]) * 111_320.0
+                east_m = (a[1] - b[1]) * 111_320.0 * math.cos(mean_lat)
+                nearest.append((math.hypot(east_m, north_m), a, b))
+        nearest.sort(key=lambda item: item[0])
+        nearest_report = [{"gap_m": round(gap, 2),
+                           "a": [round(a[0], 7), round(a[1], 7), a[2], a[3]],
+                           "b": [round(b[0], 7), round(b[1], 7), b[2], b[3]]}
+                          for gap, a, b in nearest[:12]]
+        raise ValueError("OSM coastline did not form a closed ring; "
+                         f"segments={len(segment_report)}, points={sum(s['points'] for s in segment_report)}, "
+                         f"segments_report={segment_report[:24]}, nearest_endpoint_gaps={nearest_report}")
     # The island outline is the ring with the largest absolute projected area.
     return max(closed, key=lambda ring: abs(polygon_area(ring)))
 
