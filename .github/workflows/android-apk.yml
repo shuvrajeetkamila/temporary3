@@ -153,7 +153,7 @@ jobs:
             adb wait-for-device || { echo "::error title=ADB readiness failed::adb wait-for-device returned nonzero."; exit 1; }
             adb devices -l || { echo "::error title=ADB device listing failed::adb devices returned nonzero."; exit 1; }
             test -s artifacts/NauruTheCountryside-v0.2.0-debug.apk || { echo "::error title=APK not found on emulator runner::Expected artifacts/NauruTheCountryside-v0.2.0-debug.apk to be non-empty."; exit 1; }
-            adb logcat -c || { echo "::error title=Could not clear logcat::adb logcat -c returned nonzero."; exit 1; }
+            adb logcat -c || true
             adb install -r artifacts/NauruTheCountryside-v0.2.0-debug.apk || { echo "::error title=APK install failed on Android 8::adb install returned nonzero."; exit 1; }
             adb shell am force-stop ai.nauru.countryside || { echo "::error title=Could not stop prior game process::am force-stop returned nonzero."; exit 1; }
             adb shell am start -W -n ai.nauru.countryside/.AndroidLauncher || { echo "::error title=Game activity launch failed::am start returned nonzero."; exit 1; }
