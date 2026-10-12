@@ -149,28 +149,52 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           script: |
-            set -eux
+            set -eu
             APK="artifacts/NauruTheCountryside-v0.2.0-debug.apk"
-            adb logcat -c
-            adb install -r "$APK"
-            adb shell am force-stop ai.nauru.countryside
-            adb shell am start -W -n ai.nauru.countryside/.AndroidLauncher
+            LOG="$RUNNER_TEMP/countryside-logcat.txt"
+            fail() {
+              title="$1"
+              detail=$(printf '%s' "$2" | tr '\r\n' '  ' | cut -c 1-700)
+              echo "::error title=$title::$detail"
+              exit 1
+            }
+            run_checked() {
+              label="$1"
+              shift
+              if output=$("$@" 2>&1); then
+                printf '%s\n' "$output"
+              else
+                status=$?
+                fail "$label" "$output (exit $status)"
+              fi
+            }
+            test -s "$APK" || fail "APK file missing on emulator runner" "$APK is missing or empty"
+            run_checked "ADB device readiness" adb wait-for-device
+            run_checked "ADB connected devices" adb devices -l
+            run_checked "Clear Android logcat" adb logcat -c
+            run_checked "Install APK on Android 8 emulator" adb install -r "$APK"
+            run_checked "Stop any previous game process" adb shell am force-stop ai.nauru.countryside
+            run_checked "Launch Android game activity" adb shell am start -W -n ai.nauru.countryside/.AndroidLauncher
             sleep 20
-            adb logcat -d -v brief > "$RUNNER_TEMP/countryside-logcat.txt"
-            if grep -Ei "FATAL EXCEPTION|Fatal signal|Could not load compiled/world.bin|WORLD STARTUP FAILED|Failed to create GLES|GdxRuntimeException|UnsatisfiedLinkError" "$RUNNER_TEMP/countryside-logcat.txt"; then
-              echo "::error title=Android emulator launch failure::APK logged a fatal startup or offline-world error."
-              tail -n 200 "$RUNNER_TEMP/countryside-logcat.txt"
-              exit 1
+            if ! adb logcat -d -v brief > "$LOG" 2>&1; then
+              fail "Read Android emulator logcat" "$(cat "$LOG")"
             fi
-            if ! adb shell pidof ai.nauru.countryside; then
-              echo "::error title=Android emulator process missing::Activity process did not remain alive after launch."
-              tail -n 200 "$RUNNER_TEMP/countryside-logcat.txt"
-              exit 1
+            fatal_line=$(grep -Ei "FATAL EXCEPTION|Fatal signal|Could not load compiled/world.bin|WORLD STARTUP FAILED|Failed to create GLES|GdxRuntimeException|UnsatisfiedLinkError" "$LOG" | head -n 1 || true)
+            if [ -n "$fatal_line" ]; then
+              fail "Android emulator startup or offline-world error" "$fatal_line; recent log: $(tail -n 18 "$LOG")"
             fi
-            mkdir -p artifacts/emulator
-            adb exec-out screencap -p > artifacts/emulator/startup-api26.png
-            test -s artifacts/emulator/startup-api26.png
-            echo "Android 8 launch passed; screenshot bytes=$(stat -c '%s' artifacts/emulator/startup-api26.png)"
+            loaded_line=$(grep -F "Loaded offline NCRW world" "$LOG" | head -n 1 || true)
+            if [ -z "$loaded_line" ]; then
+              fail "Offline world startup not confirmed" "Expected load marker absent. Recent log: $(tail -n 22 "$LOG")"
+            fi
+            pid=$(adb shell pidof ai.nauru.countryside 2>&1) || fail "Game process exited on Android 8" "$pid; recent log: $(tail -n 18 "$LOG")"
+            mkdir -p artifacts/emulator || fail "Create emulator artifact directory" "mkdir failed"
+            screenshot="artifacts/emulator/startup-api26.png"
+            if ! adb exec-out screencap -p > "$screenshot" 2> "$RUNNER_TEMP/screencap-error.txt"; then
+              fail "Capture Android emulator screenshot" "$(cat "$RUNNER_TEMP/screencap-error.txt")"
+            fi
+            test -s "$screenshot" || fail "Android emulator screenshot is empty" "screencap produced zero bytes"
+            printf 'Android 8 launch passed; pid=%s; screenshot bytes=%s\n' "$pid" "$(stat -c '%s' "$screenshot")"
 
       - name: Upload APK, emulator screenshot, and provenance as workflow artifact
         uses: actions/upload-artifact@v7.0.2
