@@ -174,3 +174,22 @@ jobs:
             --title "Nauru: The Countryside 0.1.0 — build ${RUN_ID}" \
             --notes "Installable Android debug APK. CI compiled the offline world from OpenStreetMap and SRTM source data, ran JVM/geodata tests, and validated APK package metadata, ABI libraries, ZIP integrity, and the embedded NCRW checksum. No physical-device test is claimed." \
             --prerelease
+
+      - name: Smoke-test unauthenticated public APK and checksum downloads
+        if: github.event_name != 'pull_request'
+        env:
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          TAG="countryside-${RUN_ID}-${RUN_ATTEMPT}"
+          FILE="NauruTheCountryside-v0.1.0-debug.apk"
+          URL="https://github.com/${REPOSITORY}/releases/download/${TAG}"
+          mkdir -p "$RUNNER_TEMP/release-smoke-test"
+          curl --fail --silent --show-error --location --retry 2 --retry-delay 2 \
+            "$URL/$FILE" --output "$RUNNER_TEMP/release-smoke-test/$FILE"
+          curl --fail --silent --show-error --location --retry 2 --retry-delay 2 \
+            "$URL/$FILE.sha256" --output "$RUNNER_TEMP/release-smoke-test/$FILE.sha256"
+          cmp "$RUNNER_TEMP/release-smoke-test/$FILE" "artifacts/$FILE"
+          (cd "$RUNNER_TEMP/release-smoke-test" && sha256sum --check "$FILE.sha256")
+          echo "::notice title=Download link verified::Unauthenticated HTTPS downloads of the published APK and checksum succeeded; bytes=$(stat -c '%s' "$RUNNER_TEMP/release-smoke-test/$FILE"); sha256=$(sha256sum "$RUNNER_TEMP/release-smoke-test/$FILE" | cut -d' ' -f1)"

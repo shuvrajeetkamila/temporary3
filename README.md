@@ -4,7 +4,7 @@ An offline-first Android 3D game prototype and open-geodata pipeline for an orig
 
 ## Current implementation status
 
-The repository now contains an end-to-end game implementation: NCRW world loading and one shared map transform; a procedural 3D terrain/feature renderer; a walkable character; an integrated Bullet collision world with car suspension/tyre forces, distributed boat buoyancy, helicopter rotor forces, and STOL aircraft lift/landing gear; third-person camera, touch/keyboard/gamepad controls, and battery/thermal quality policy. The real OSM/SRTM data pipeline has passed CI and the Java core has compiled; CI is continuing through core/JVM tests and Android APK packaging. A post-stall curve assertion was corrected after the latest test run, so a successful Android APK is not yet claimed. No physical Android-device QA or measured performance is claimed; continue to report every failed or unrun gate plainly.
+The repository now contains an end-to-end game implementation: NCRW world loading and one shared map transform; a procedural 3D terrain/feature renderer; a walkable character; an integrated Bullet collision world with car suspension/tyre forces, distributed boat buoyancy, helicopter rotor forces, and STOL aircraft lift/landing gear; third-person camera, touch/keyboard/gamepad controls, and battery/thermal quality policy. GitHub Actions run 38257927771 successfully compiled real OSM/SRTM world data, passed Python and JVM tests, assembled the Android APK, validated its package metadata/native ABIs/world checksum, and published a prerelease. A follow-up workflow adds an unauthenticated HTTPS download smoke test for the public APK and checksum. No physical Android-device QA or measured performance is claimed; continue to report every failed or unrun gate plainly.
 
 ## Build the offline world data
 
@@ -46,7 +46,7 @@ Most geographic locations are transformed at 1:25 into local gameplay space. A n
 
 ## CI and downloads
 
-`.github/workflows/android-apk.yml` fetches the current open-data snapshot, runs Python and JVM tests, builds the debug APK, validates its embedded offline world and native libraries, produces a SHA-256 sidecar, uploads a CI artifact, and publishes a prerelease on the Arena working branch. The generated OSM/SRTM provenance and world-build audit manifests accompany the APK.
+`.github/workflows/android-apk.yml` fetches the current open-data snapshot, runs Python and JVM tests, builds the debug APK, validates its embedded offline world and native libraries, produces a SHA-256 sidecar, uploads a CI artifact, and publishes a prerelease on the Arena working branch. It then performs unauthenticated HTTPS downloads of the published APK and sidecar, compares the downloaded APK with the build output, and verifies the checksum. The generated OSM/SRTM provenance and world-build audit manifests accompany the APK.
 
 ## Honest QA note
 
