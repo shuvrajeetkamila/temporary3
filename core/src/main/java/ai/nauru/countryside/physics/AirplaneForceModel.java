@@ -24,7 +24,7 @@ public final class AirplaneForceModel {
         } else {
             float beyond = Math.abs(alpha) - STALL_ANGLE_RAD;
             float atStall = (alpha >= 0 ? 1f : -1f) * MAX_CL + flapLift;
-            float decay = (float) Math.exp(-beyond * 2.6f);
+            float decay = (float) Math.exp(-beyond * 5.0f);
             cl = atStall * decay;
         }
         return clamp(cl, -MAX_CL, MAX_CL + 0.42f * flap);

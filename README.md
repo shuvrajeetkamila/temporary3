@@ -4,7 +4,7 @@ An offline-first Android 3D game prototype and open-geodata pipeline for an orig
 
 ## Current implementation status
 
-The repository now contains an end-to-end game implementation: NCRW world loading and one shared map transform; a procedural 3D terrain/feature renderer; a walkable character; an integrated Bullet collision world with car suspension/tyre forces, distributed boat buoyancy, helicopter rotor forces, and STOL aircraft lift/landing gear; third-person camera, touch/keyboard/gamepad controls, and battery/thermal quality policy. The data pipeline, JVM tests, and APK workflow are in place. **This code has not yet been compiled or run in CI, and no physical Android-device QA or measured performance is claimed.** The CI workflow is the next verification gate; report any failed or unrun systems plainly.
+The repository now contains an end-to-end game implementation: NCRW world loading and one shared map transform; a procedural 3D terrain/feature renderer; a walkable character; an integrated Bullet collision world with car suspension/tyre forces, distributed boat buoyancy, helicopter rotor forces, and STOL aircraft lift/landing gear; third-person camera, touch/keyboard/gamepad controls, and battery/thermal quality policy. The real OSM/SRTM data pipeline has passed CI and the Java core has compiled; CI is continuing through core/JVM tests and Android APK packaging. A post-stall curve assertion was corrected after the latest test run, so a successful Android APK is not yet claimed. No physical Android-device QA or measured performance is claimed; continue to report every failed or unrun gate plainly.
 
 ## Build the offline world data
 
