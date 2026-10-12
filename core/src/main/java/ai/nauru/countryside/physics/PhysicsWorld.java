@@ -39,6 +39,7 @@ public final class PhysicsWorld implements Disposable {
     private static final float[][] PLANE_GEAR_OFFSETS = {{0f,-0.12f,-1.65f},{-1.55f,-0.12f,0.75f},{1.55f,-0.12f,0.75f}};
 
     private final WorldData data;
+    private final VehicleControls idleControls = new VehicleControls();
     private final btDefaultCollisionConfiguration collisionConfig;
     private final btCollisionDispatcher dispatcher;
     private final btDbvtBroadphase broadphase;
@@ -69,8 +70,16 @@ public final class PhysicsWorld implements Disposable {
     private final Vector3 contactPoint = new Vector3();
     private final Vector3 contactNormal = new Vector3();
     private final ClosestRayResultCallback[] groundRays = new ClosestRayResultCallback[4];
+    private final ClosestRayResultCallback exitGroundRay;
     private final Vector3[] rayFrom = {new Vector3(), new Vector3(), new Vector3(), new Vector3()};
     private final Vector3[] rayTo = {new Vector3(), new Vector3(), new Vector3(), new Vector3()};
+    private final Vector3 exitRayFrom = new Vector3();
+    private final Vector3 exitRayTo = new Vector3();
+    private final Vector3 exitRayHit = new Vector3();
+    private final Vector3 coastA = new Vector3();
+    private final Vector3 coastB = new Vector3();
+    private final Vector3 coastCenter = new Vector3();
+    private final Vector3 coastBest = new Vector3();
     private final Matrix4 transform = new Matrix4();
     private final Matrix4 newTransform = new Matrix4();
     private final Quaternion rotation = new Quaternion();
@@ -86,6 +95,9 @@ public final class PhysicsWorld implements Disposable {
     public PhysicsWorld(WorldData data) {
         this.data = data;
         Bullet.init();
+        exitGroundRay = new ClosestRayResultCallback(Vector3.Zero, new Vector3(0f, -1f, 0f));
+        exitGroundRay.setCollisionFilterGroup(1);
+        exitGroundRay.setCollisionFilterMask(1);
         collisionConfig = new btDefaultCollisionConfiguration();
         dispatcher = new btCollisionDispatcher(collisionConfig);
         broadphase = new btDbvtBroadphase();
@@ -275,13 +287,110 @@ public final class PhysicsWorld implements Disposable {
         return p.dst2(temp) <= radius * radius;
     }
 
+    /**
+     * Find a ground/shore exit point only when the craft is stopped and close to
+     * stable ground. Boats disembark onto the nearest coast rather than into deep water.
+     */
+    public boolean safeExitPosition(Body vehicle, int mode, float yawRad, Vector3 out) {
+        if (mode < CAR || mode > AIRPLANE || vehicle == null || out == null) return false;
+        float speedLimit = mode == CAR ? 2.2f : mode == BOAT ? 1.1f : 1.35f;
+        if (speedMps(vehicle) > speedLimit || Math.abs(verticalSpeedMps(vehicle)) > 0.65f) return false;
+        position(vehicle, p);
+        if (mode == BOAT) {
+            float coastDistance2 = nearestCoastPoint(p.x, p.z);
+            if (coastDistance2 > 6.0f * 6.0f) return false;
+            temp.set(coastCenter.x - coastBest.x, 0f, coastCenter.z - coastBest.z);
+            if (temp.len2() < 0.01f) return false;
+            temp.nor();
+            float x = coastBest.x + temp.x * 1.5f;
+            float z = coastBest.z + temp.z * 1.5f;
+            float[] ground = new float[1];
+            if (!groundHeightAt(x, z, p.y, ground) || Math.abs(ground[0] - p.y) > 4.0f) return false;
+            out.set(x, ground[0] + 0.95f, z);
+            return isExitAreaClear(out, vehicle);
+        }
+        float[] ground = new float[1];
+        if (!groundHeightAt(p.x, p.z, p.y, ground) || Math.abs(ground[0] - p.y) > 2.5f) return false;
+        float sideDistance = mode == AIRPLANE ? 6.2f : mode == HELICOPTER ? 3.0f : 2.4f;
+        float rightX = (float) Math.cos(yawRad), rightZ = -(float) Math.sin(yawRad);
+        for (int sign : new int[]{1, -1}) {
+            float x = p.x + rightX * sideDistance * sign;
+            float z = p.z + rightZ * sideDistance * sign;
+            if (!groundHeightAt(x, z, p.y, ground) || Math.abs(ground[0] - p.y) > 2.5f) continue;
+            out.set(x, ground[0] + 0.95f, z);
+            if (isExitAreaClear(out, vehicle)) return true;
+        }
+        return false;
+    }
+
+    private boolean groundHeightAt(float x, float z, float referenceY, float[] groundY) {
+        exitRayFrom.set(x, referenceY + 24f, z);
+        exitRayTo.set(x, referenceY - 24f, z);
+        exitGroundRay.setRayFromWorld(exitRayFrom);
+        exitGroundRay.setRayToWorld(exitRayTo);
+        exitGroundRay.setClosestHitFraction(1f);
+        exitGroundRay.setCollisionObject(null);
+        world.rayTest(exitRayFrom, exitRayTo, exitGroundRay);
+        if (!exitGroundRay.hasHit()) return false;
+        exitGroundRay.getHitPointWorld(exitRayHit);
+        groundY[0] = exitRayHit.y;
+        return Float.isFinite(groundY[0]);
+    }
+
+    private float nearestCoastPoint(float x, float z) {
+        int count = data.coastlineXZ.length / 2;
+        if (count < 2) return Float.POSITIVE_INFINITY;
+        coastCenter.setZero();
+        for (int i = 0; i < count; i++) {
+            float realX = data.coastlineXZ[i * 2], realZ = data.coastlineXZ[i * 2 + 1];
+            data.transform.map(realX, data.sampleElevation(realX, realZ), realZ, coastA);
+            coastCenter.add(coastA);
+        }
+        coastCenter.scl(1f / count);
+        float bestDistance2 = Float.POSITIVE_INFINITY;
+        coastBest.setZero();
+        for (int i = 0; i < count; i++) {
+            int j = (i + 1) % count;
+            float ax = data.coastlineXZ[i * 2], az = data.coastlineXZ[i * 2 + 1];
+            float bx = data.coastlineXZ[j * 2], bz = data.coastlineXZ[j * 2 + 1];
+            data.transform.map(ax, data.sampleElevation(ax, az), az, coastA);
+            data.transform.map(bx, data.sampleElevation(bx, bz), bz, coastB);
+            float dx = coastB.x - coastA.x, dz = coastB.z - coastA.z;
+            float length2 = dx * dx + dz * dz;
+            float t = length2 > 1e-5f ? clamp(((x - coastA.x) * dx + (z - coastA.z) * dz) / length2, 0f, 1f) : 0f;
+            float px = coastA.x + dx * t, pz = coastA.z + dz * t;
+            float ddx = x - px, ddz = z - pz;
+            float distance2 = ddx * ddx + ddz * ddz;
+            if (distance2 < bestDistance2) {
+                bestDistance2 = distance2;
+                coastBest.set(px, 0f, pz);
+            }
+        }
+        return bestDistance2;
+    }
+
+    private boolean isExitAreaClear(Vector3 exit, Body leavingVehicle) {
+        for (int mode = CAR; mode <= AIRPLANE; mode++) {
+            Body other = vehicles[mode];
+            if (other == null || other == leavingVehicle) continue;
+            position(other, temp2);
+            float required = mode == AIRPLANE ? 2.0f : mode == BOAT ? 1.8f : mode == HELICOPTER ? 1.8f : 1.8f;
+            float dx = exit.x - temp2.x, dz = exit.z - temp2.z;
+            if (dx * dx + dz * dz < required * required && Math.abs(exit.y - temp2.y) < 2.2f) return false;
+        }
+        return true;
+    }
+
     public void step(VehicleControls controls, int mode, float timeSeconds) {
         simulationTime = timeSeconds;
+        idleControls.reset();
         if (mode == WALK && !characterBoarded) applyCharacter(controls);
-        else if (mode == CAR) applyCar(controls);
-        else if (mode == BOAT) applyBoat(controls);
-        else if (mode == HELICOPTER) applyHelicopter(controls);
-        else if (mode == AIRPLANE) applyAirplane(controls);
+        // Every body remains physically supported while parked. In particular, the
+        // boat must keep its distributed buoyancy when the player is walking or flying.
+        applyCar(mode == CAR ? controls : idleControls);
+        applyBoat(mode == BOAT ? controls : idleControls);
+        applyHelicopter(mode == HELICOPTER ? controls : idleControls);
+        applyAirplane(mode == AIRPLANE ? controls : idleControls);
         world.stepSimulation(DT, 0, DT);
     }
 
@@ -305,11 +414,25 @@ public final class PhysicsWorld implements Disposable {
             body.setInterpolationWorldTransform(newTransform);
             world.updateSingleAabb(body);
         }
-        if (input.jumpPressed && Math.abs(velocity.y) < 0.35f) {
+        if (input.jumpPressed && Math.abs(velocity.y) < 0.35f && characterGrounded()) {
             // v = sqrt(2 g h), with a documented 1.1 m hop target.
             float jumpVelocity = (float) Math.sqrt(2f * 9.81f * 1.1f);
             body.applyCentralImpulse(temp.set(0f, character.mass * jumpVelocity, 0f));
         }
+    }
+
+    private boolean characterGrounded() {
+        position(character, p);
+        exitRayFrom.set(p.x, p.y - 0.78f, p.z);
+        exitRayTo.set(p.x, p.y - 1.07f, p.z);
+        exitGroundRay.setRayFromWorld(exitRayFrom);
+        exitGroundRay.setRayToWorld(exitRayTo);
+        exitGroundRay.setClosestHitFraction(1f);
+        exitGroundRay.setCollisionObject(null);
+        world.rayTest(exitRayFrom, exitRayTo, exitGroundRay);
+        if (!exitGroundRay.hasHit()) return false;
+        exitGroundRay.getHitPointWorld(exitRayHit);
+        return p.y - 0.935f - exitRayHit.y <= 0.18f;
     }
 
     private void applyCar(VehicleControls input) {
@@ -446,7 +569,7 @@ public final class PhysicsWorld implements Disposable {
 
     private void applyAirplane(VehicleControls input) {
         btRigidBody body = airplane.rigidBody;
-        applyGroundSprings(body, PLANE_GEAR_OFFSETS, 3, 0.82f, 12_500f, 1_750f, 6_000f, 1.45f);
+        float gearLoad = applyGroundSprings(body, PLANE_GEAR_OFFSETS, 3, 0.82f, 12_500f, 1_750f, 6_000f, 1.45f);
         getBasis(body, forward, right, up, v);
         Vector3 velocity = body.getLinearVelocity();
         float airspeed = velocity.len();
@@ -461,6 +584,10 @@ public final class PhysicsWorld implements Disposable {
         body.applyCentralForce(force.set(liftDir).scl(liftN));
         float dragN = AirplaneForceModel.dragNewtons(airspeed, alpha, input.flaps);
         body.applyCentralForce(temp.set(velocity).scl(-dragN / Math.max(airspeed, 0.1f)));
+        if (input.brake > 0f && gearLoad > 200f && airspeed > 0.1f) {
+            float wheelBrakeN = Math.min(12_000f, gearLoad * 0.68f) * clamp(input.brake, 0f, 1f);
+            body.applyCentralForce(temp.set(velocity).scl(-wheelBrakeN / airspeed));
+        }
         body.applyCentralForce(temp.set(forward).scl(AirplaneForceModel.propellerThrust(input.throttle, aircraftRpm, airspeed)));
         float q = AirplaneForceModel.dynamicPressure(airspeed);
         AirplaneForceModel.Moments moments = AirplaneForceModel.controlMoments(input.cyclicRoll,
@@ -493,6 +620,7 @@ public final class PhysicsWorld implements Disposable {
         }
         for (btCollisionShape shape : shapes) shape.dispose();
         for (ClosestRayResultCallback callback : groundRays) if (callback != null) callback.dispose();
+        exitGroundRay.dispose();
         terrainMesh.dispose();
         world.dispose();
         solver.dispose();

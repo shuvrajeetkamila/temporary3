@@ -1,14 +1,24 @@
 # Nauru: The Countryside
 
-An offline-first Android 3D game prototype and open-geodata pipeline for an original, human-scale interpretation of Nauru. The project uses libGDX/OpenGL ES 3 and Bullet on Android, custom original geometry, OpenStreetMap data, and SRTM elevation. No commercial map imagery or vehicle assets are used.
+An offline Android 3D driving-and-flight prototype set on an original, human-scale interpretation of Nauru. It uses libGDX/OpenGL ES 3, Bullet, locally packaged OpenStreetMap geometry, and SRTM elevation. Runtime gameplay makes no network requests. No satellite imagery or third-party vehicle models are shipped.
 
-## Current implementation status
+## What changed in 0.2.0
 
-The repository now contains an end-to-end game implementation: NCRW world loading and one shared map transform; a procedural 3D terrain/feature renderer; a walkable character; an integrated Bullet collision world with car suspension/tyre forces, distributed boat buoyancy, helicopter rotor forces, and STOL aircraft lift/landing gear; third-person camera, touch/keyboard/gamepad controls, and battery/thermal quality policy. GitHub Actions run 38257927771 successfully compiled real OSM/SRTM world data, passed Python and JVM tests, assembled the Android APK, validated its package metadata/native ABIs/world checksum, and published a prerelease. A follow-up workflow adds an unauthenticated HTTPS download smoke test for the public APK and checksum. No physical Android-device QA or measured performance is claimed; continue to report every failed or unrun gate plainly.
+The previous build had a serious world-state bug: while walking, parked vehicles were not rendered, the car and aircraft could start inside one another, and the workboat lost buoyancy whenever it was not the selected vehicle. This rebuild keeps every craft visible and physically supported, verifies spawn-clearance envelopes in both Python and JVM tests, spaces the 4x4 away from the runway aircraft, and only allows disembarking from a stopped craft at ground level (or from the boat near shore). The scene now uses original composite meshes for the 4x4, workboat, helicopter, STOL aircraft, person, tropical palms, island houses, and marked runway rather than one-box placeholder vehicles.
 
-## Build the offline world data
+## Gameplay and controls
 
-The map and elevation snapshots are fetched by CI and compiled into a small versioned `NCRW` binary. The installed game does not access the network.
+- Walk around the island; approach one of the visible, parked vehicles and tap **USE** to board.
+- On foot: left stick walks, **GO** runs, **AUX** jumps, and dragging the right side looks around.
+- In a vehicle: the stick steers or controls cyclic/pitch/bank; **GO** accelerates or raises helicopter collective; **BRK** brakes, reverses, or lowers collective; **AUX** toggles aircraft engines; **USE** exits only when a safe exit is available.
+- **REC** returns the current player/vehicle to its spawn. **CAM**, **MAP**, **DBG**, and the quality-profile button change view, map, diagnostics, and performance profile.
+- Keyboard and gamepad inputs are also available. See the on-screen mode-specific control hints.
+
+## Offline world build
+
+CI fetches and checksums the Nauru OpenStreetMap and SRTM source snapshots, compiles them to the versioned `NCRW` binary, and packages the data and attribution notices in the APK. The world uses one tested 1:25 transform, with a smooth airport influence field expanding the measured runway to 780 game metres. Spawn clearances and the walk-to-car interaction distance are included in the compiler audit manifest.
+
+For a local data build:
 
 ```bash
 python3 tools/fetch_sources.py
@@ -24,30 +34,22 @@ cp DATA_SOURCES.md android/assets/licenses/DATA_SOURCES.txt
 python3 -m unittest discover -s tools -p 'test*.py' -v
 ```
 
-## Run tests and assemble an Android APK
+## Build and test
 
-Requirements: JDK 17, Android SDK platform/build-tools 36, Python 3, and internet access for Gradle/Maven dependencies and the two open-data source files.
+Requirements: JDK 17, Android SDK platform/build-tools 36, and Python 3.
 
 ```bash
 ./gradlew --no-daemon --stacktrace :core:test :android:testDebugUnitTest :android:assembleDebug
 ```
 
-The APK is emitted to `android/build/outputs/apk/debug/android-debug.apk`. CI additionally checks APK ZIP integrity, manifest/package/min-SDK metadata, native ABI contents, and debug signature, then computes a SHA-256 sidecar.
+The APK is emitted at `android/build/outputs/apk/debug/android-debug.apk`. CI validates the package name, version, minimum SDK, native ABI libraries, embedded NCRW checksum, APK ZIP/signature, and public download/checksum URLs. It also starts the built APK in an Android API 26 emulator, checks that the offline world loaded without a startup crash, and captures a startup screenshot.
 
-## World scale
+## Provenance and licenses
 
-Most geographic locations are transformed at 1:25 into local gameplay space. A narrow smooth influence corridor expands the OSM runway along its measured center axis to 780 game metres for a light STOL aircraft. Runway width, building footprints, road widths, and vehicle dimensions remain at human scale; ordinary structures are deterministically culled when transformed footprints overlap. The same runtime `WorldTransform` is used for terrain, map features, the minimap, and source-anchored spawns. A large procedural ocean/airspace around the compact island supplies room for boat and flight testing.
+- `DATA_SOURCES.md` documents OSM/SRTM sources, snapshot checksums, and the gameplay transform.
+- `ASSET_LICENSES.md` lists third-party dependency licenses and original procedural content.
+- The game HUD displays **© OpenStreetMap contributors**.
 
-## Data and licensing
+## QA limits
 
-- `DATA_SOURCES.md` — upstream sources, retrieval/checksum process, attribution, and transform notes.
-- `ASSET_LICENSES.md` — original and third-party content/dependency licenses.
-- OSM attribution (© OpenStreetMap contributors) is also visible in the game HUD/minimap.
-
-## CI and downloads
-
-`.github/workflows/android-apk.yml` fetches the current open-data snapshot, runs Python and JVM tests, builds the debug APK, validates its embedded offline world and native libraries, produces a SHA-256 sidecar, uploads a CI artifact, and publishes a prerelease on the Arena working branch. It then performs unauthenticated HTTPS downloads of the published APK and sidecar, compares the downloaded APK with the build output, and verifies the checksum. The generated OSM/SRTM provenance and world-build audit manifests accompany the APK.
-
-## Honest QA note
-
-CI compilation and host-side packaged-world/force-model tests do not substitute for a physical Android phone. The project does not claim measured thermal behavior, battery life, controls, or rendering performance on physical hardware unless those device measurements are explicitly added to the release notes.
+Host-side tests cover the transform, packaged-world parser, force-model math, spawn separation, and geodata compiler. The API 26 emulator gate checks installation, startup, and offline-world loading. Neither gate substitutes for hands-on testing on a physical Android phone; measured phone performance, touch feel, battery use, thermal behaviour, and full vehicle handling are not claimed without device measurements.

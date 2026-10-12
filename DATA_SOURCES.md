@@ -18,6 +18,8 @@
 
 All source coordinates are projected from WGS84 into a local East-North-Up tangent approximation centered on the coastline. Runtime `WorldTransform` applies the 1:25 island compression and the documented smooth airport hero-zone expansion. The original elevation samples remain in metres vertically. The transformed runway target is 780 m, and the compiler rejects a result outside 600–900 m. The source and transformed runway measurements appear in the generated audit manifest.
 
+Spawn positions are derived from the measured runway/coast and packaged as source-anchored locations. The audit records pairwise gameplay-space separations using conservative hull radii; compilation fails if the walker cannot reach the 4x4 or if two parked vehicle envelopes overlap. The 4x4 is offset from the runway aircraft to avoid the overlapping startup layout in the rejected 0.1.0 build.
+
 OSM coastline ways are stitched by shared endpoints. Where the source has a small endpoint mismatch, the compiler permits a straight join only up to 50 m and records the join count and lengths in `assets/compiled/manifest.json`; larger gaps fail the build rather than inventing an island outline. The land outline still follows the fetched OSM coastline geometry (this is not a generic oval or raster substitute).
 
 The APK contains only the compact compiled world, not raw SRTM or unfiltered OSM files. Build outputs include a per-input checksum manifest so the exact upstream snapshot used for a release is auditable.

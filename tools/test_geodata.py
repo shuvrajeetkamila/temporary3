@@ -146,6 +146,14 @@ class GeodataCompilationTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(payload[:-32]).digest(), payload[-32:])
             self.assertEqual(audit["terrain"]["grid_width"], 97)
             self.assertAlmostEqual(audit["airport_hero_zone"]["runway_transformed_m"], 780.0, delta=1.0)
+            clearances = {tuple(row["types"]): row["separation_m"]
+                          for row in audit["spawn_clearances"]}
+            self.assertAlmostEqual(clearances[(1, 2)], 5.0, delta=0.02,
+                                   msg="walker must begin within USE range without intersecting the 4x4")
+            self.assertGreater(clearances[(2, 5)], 13.0,
+                               "parked 4x4 must not spawn in the aircraft wing envelope")
+            self.assertGreater(clearances[(2, 4)], 12.0,
+                               "the car and helicopter must start with non-overlapping clearance")
             self.assertTrue(manifest_path.is_file())
             self.assertIn("source_hashes", json.loads(manifest_path.read_text(encoding="utf-8")))
 

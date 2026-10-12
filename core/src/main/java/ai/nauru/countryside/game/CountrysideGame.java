@@ -48,6 +48,8 @@ public final class CountrysideGame extends Game implements InputProcessor {
     private boolean helicopterEngineOn;
     private boolean airplaneEngineOn;
     private boolean jumpPendingForStep;
+    private String statusMessage = "";
+    private float statusMessageUntil;
     private boolean pendingInteract, pendingAux, pendingRecover, pendingCamera, pendingMap, pendingDiagnostics, pendingProfile;
     private float cameraTouchX, cameraTouchY;
     private long gamepadButtons;
@@ -99,7 +101,7 @@ public final class CountrysideGame extends Game implements InputProcessor {
                 hud.render(mode, 0f, 0f, "", governor, simTime,
                         Gdx.graphics.getFramesPerSecond(), governor.targetFps, false,
                         diagnostics, false, false, 0, 0f, fixedClock.droppedSteps(), 0f, 0f,
-                        layout, leftX, leftY, gasHeld, brakeHeld, loadError);
+                        layout, leftX, leftY, gasHeld, brakeHeld, loadError, activeStatus());
             }
             return;
         }
@@ -121,7 +123,7 @@ public final class CountrysideGame extends Game implements InputProcessor {
                 physics.carGear(), mode == PhysicsWorld.CAR ? physics.carRpm()
                         : mode == PhysicsWorld.HELICOPTER ? physics.rotorRpm() : physics.aircraftRpm(),
                 fixedClock.droppedSteps(), hudPosition.x, hudPosition.z, layout, leftX, leftY,
-                gasHeld, brakeHeld, null);
+                gasHeld, brakeHeld, null, activeStatus());
     }
 
     private void stepSimulation(float dt) {
@@ -188,8 +190,9 @@ public final class CountrysideGame extends Game implements InputProcessor {
         controls.profilePressed = false;
         if (mode == PhysicsWorld.WALK) {
             float sin = (float) Math.sin(cameraYaw), cos = (float) Math.cos(cameraYaw);
-            controls.moveX = leftX * cos - leftY * sin;
-            controls.moveY = -leftX * sin - leftY * cos;
+            float pace = gasHeld ? 1.4f : 1f;
+            controls.moveX = clamp((leftX * cos - leftY * sin) * pace, -1.4f, 1.4f);
+            controls.moveY = clamp((-leftX * sin - leftY * cos) * pace, -1.4f, 1.4f);
         } else if (mode == PhysicsWorld.HELICOPTER) {
             controls.cyclicRoll = leftX;
             controls.cyclicPitch = leftY;
@@ -215,7 +218,7 @@ public final class CountrysideGame extends Game implements InputProcessor {
             controls.handbrake = key(Input.Keys.SPACE) ? 1f : 0f;
         } else {
             controls.steer = leftX;
-            controls.throttle = gasHeld ? 1f : clamp(leftY * 0.78f, -0.65f, 1f);
+            controls.throttle = gasHeld ? 1f : brakeHeld ? -0.55f : clamp(leftY * 0.78f, -0.65f, 1f);
             controls.brake = brakeHeld ? 1f : 0f;
         }
         if (mode == PhysicsWorld.AIRPLANE)
@@ -266,25 +269,61 @@ public final class CountrysideGame extends Game implements InputProcessor {
                 float distance2 = dx * dx + dy * dy + dz * dz;
                 if (distance2 < nearestDistance2) { nearestDistance2 = distance2; nearestMode = candidateMode; }
             }
-            if (nearestMode < 0) return;
+            if (nearestMode < 0) {
+                showStatus("Walk closer to a parked vehicle, then tap USE");
+                return;
+            }
             PhysicsWorld.Body vehicle = physics.bodyForMode(nearestMode);
+            if (physics.speedMps(vehicle) > 1.6f) {
+                showStatus("Wait for the vehicle to stop before boarding");
+                return;
+            }
             physics.position(vehicle, candidatePosition);
             float vehicleYaw = physics.yaw(vehicle);
             rightVector.set((float) Math.cos(vehicleYaw), 0f, -(float) Math.sin(vehicleYaw));
-            exitPosition.set(candidatePosition).mulAdd(rightVector, 3.25f);
+            float clearance = nearestMode == PhysicsWorld.AIRPLANE ? 6.2f
+                    : nearestMode == PhysicsWorld.HELICOPTER ? 3.0f : 2.5f;
+            exitPosition.set(candidatePosition).mulAdd(rightVector, clearance);
             physics.setBodyTransform(physics.character, exitPosition, vehicleYaw);
             physics.setCharacterBoarded(true);
             mode = nearestMode;
+            showStatus("Boarded " + vehicleName(nearestMode) + " · AUX for engine");
             return;
         }
         PhysicsWorld.Body vehicle = physics.bodyForMode(mode);
-        physics.position(vehicle, candidatePosition);
         float vehicleYaw = physics.yaw(vehicle);
-        rightVector.set((float) Math.cos(vehicleYaw), 0f, -(float) Math.sin(vehicleYaw));
+        if (!physics.safeExitPosition(vehicle, mode, vehicleYaw, exitPosition)) {
+            if (mode == PhysicsWorld.BOAT)
+                showStatus("Bring the workboat close to shore and stop to disembark");
+            else if (mode == PhysicsWorld.HELICOPTER || mode == PhysicsWorld.AIRPLANE)
+                showStatus("Land and stop before leaving the aircraft");
+            else
+                showStatus("Stop the 4x4 before leaving");
+            return;
+        }
         physics.setCharacterBoarded(false);
-        exitPosition.set(candidatePosition).mulAdd(rightVector, 3.25f);
         physics.setBodyTransform(physics.character, exitPosition, vehicleYaw);
         mode = PhysicsWorld.WALK;
+        showStatus("Back on foot · walk to another visible vehicle and tap USE");
+    }
+
+    private static String vehicleName(int mode) {
+        switch (mode) {
+            case PhysicsWorld.CAR: return "the 4x4";
+            case PhysicsWorld.BOAT: return "the workboat";
+            case PhysicsWorld.HELICOPTER: return "the helicopter";
+            case PhysicsWorld.AIRPLANE: return "the STOL aircraft";
+            default: return "the vehicle";
+        }
+    }
+
+    private void showStatus(String message) {
+        statusMessage = message;
+        statusMessageUntil = simTime + 4f;
+    }
+
+    private String activeStatus() {
+        return simTime <= statusMessageUntil ? statusMessage : "";
     }
 
     private void pollGamepadEdges() {

@@ -58,7 +58,7 @@ final class HudRenderer implements Disposable {
                 boolean mapVisible, boolean diagnostics, boolean paused, boolean engineOn, int gear,
                 float rpm, long droppedSteps, float playerX, float playerZ,
                 TouchLayout layout, float stickX, float stickY,
-                boolean goHeld, boolean brakeHeld, String loadError) {
+                boolean goHeld, boolean brakeHeld, String loadError, String statusMessage) {
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
@@ -97,8 +97,13 @@ final class HudRenderer implements Disposable {
         String quality = governor.active.name() + "  " + targetFps + " FPS  "
                 + (governor.thermalStatus >= 3 ? "SEVERE THERMAL" : governor.batterySaver ? "BATTERY SAVER" : "OFFLINE");
         font.draw(batch, quality, 22f * unit, height - 115f * unit);
-        font.draw(batch, "Touch left stick to move/steer · drag right side to look · USE to board/exit",
-                22f * unit, 24f * unit);
+        font.setColor(0.95f, 0.93f, 0.82f, 1f);
+        font.draw(batch, controlsHint(mode), 22f * unit, 24f * unit);
+        if (statusMessage != null && !statusMessage.isEmpty()) {
+            font.setColor(1f, 0.82f, 0.43f, 1f);
+            font.draw(batch, statusMessage, width * 0.40f, height - 34f * unit,
+                    width * 0.56f, 1, true);
+        }
         font.setColor(0.90f, 0.91f, 0.86f, 1f);
         font.draw(batch, "© OpenStreetMap contributors", width - 247f * unit, 22f * unit);
         if (diagnostics) {
@@ -177,6 +182,16 @@ final class HudRenderer implements Disposable {
         shapes.circle(playerMapX, playerMapY, 4f * unit, 12);
         shapes.setColor(0.95f, 0.85f, 0.38f, 0.9f);
         shapes.rect(x, y + h + 4f * unit, 164f * unit, 20f * unit);
+    }
+
+    private static String controlsHint(int mode) {
+        switch (mode) {
+            case PhysicsWorld.CAR: return "Stick steer · GO throttle · BRK stop · USE exit · REC reset";
+            case PhysicsWorld.BOAT: return "Stick steer · GO throttle · BRK reverse · USE ashore to exit";
+            case PhysicsWorld.HELICOPTER: return "Stick cyclic · GO/BRK lift · AUX engine · land before USE";
+            case PhysicsWorld.AIRPLANE: return "Stick pitch/bank · GO throttle · BRK flaps/brake · AUX engine";
+            default: return "Stick walk · GO run · AUX jump · USE board · drag right side to look";
+        }
     }
 
     private static String modeName(int mode) {

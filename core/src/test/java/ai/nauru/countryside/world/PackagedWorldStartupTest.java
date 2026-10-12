@@ -1,5 +1,6 @@
 package ai.nauru.countryside.world;
 
+import com.badlogic.gdx.math.Vector3;
 import org.junit.Test;
 import java.io.File;
 import java.nio.file.Files;
@@ -21,6 +22,24 @@ public class PackagedWorldStartupTest {
         assertNotNull(world.spawn(4));
         assertNotNull(world.spawn(5));
         assertTrue("Boat spawn should begin close to water level", world.spawn(3).height < 5f);
+        float[] hullRadii = {0f, 0.95f, 2.6f, 2.4f, 3.4f, 5.5f};
+        Vector3[] starts = new Vector3[6];
+        for (int type = 1; type <= 5; type++)
+            starts[type] = world.transform.mapSpawn(world.spawn(type), new Vector3());
+        assertEquals("walker must start close enough to board the 4x4", 5.0f,
+                horizontalDistance(starts[1], starts[2]), 0.05f);
+        for (int a = 2; a <= 5; a++) {
+            for (int b = a + 1; b <= 5; b++) {
+                float minimum = hullRadii[a] + hullRadii[b] + 0.5f;
+                assertTrue("parked spawns " + a + " and " + b + " overlap their clearance envelopes",
+                        horizontalDistance(starts[a], starts[b]) >= minimum);
+            }
+        }
         assertFalse(world.sha256.isEmpty());
+    }
+
+    private static float horizontalDistance(Vector3 a, Vector3 b) {
+        float dx = a.x - b.x, dz = a.z - b.z;
+        return (float) Math.sqrt(dx * dx + dz * dz);
     }
 }

@@ -11,7 +11,7 @@ import subprocess
 import zipfile
 
 EXPECTED_PACKAGE = "ai.nauru.countryside"
-EXPECTED_VERSION = "0.1.0"
+EXPECTED_VERSION = "0.2.0"
 EXPECTED_ABIS = {"arm64-v8a", "armeabi-v7a", "x86_64"}
 
 

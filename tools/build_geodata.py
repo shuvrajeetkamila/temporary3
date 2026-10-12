@@ -485,12 +485,16 @@ def build(osm_path: pathlib.Path, hgt_path: pathlib.Path, out_path: pathlib.Path
     # Spawn anchors are OSM-registered locations; offsets are explicit local-scale vehicle clearances.
     ax, az = axis
     right = (-az, ax)
-    airport_start = (runway_center[0] - ax * runway_len * 0.44 + right[0] * 90.0,
-                     runway_center[1] - az * runway_len * 0.44 + right[1] * 90.0)
-    car_anchor = airport_start
-    walk_anchor = airport_start
-    heli_anchor = (runway_center[0] - ax * runway_len * 0.40 + right[0] * 170.0,
-                   runway_center[1] - az * runway_len * 0.40 + right[1] * 170.0)
+    # Keep the full-span aircraft clear of the 4x4 at launch. In the earlier
+    # layout the road vehicle was only 90 real metres off-axis (3.6 game metres
+    # after 1:25 compression), so it spawned inside the aircraft wing envelope.
+    # Park the 4x4 420 m off the runway centreline: close enough to see, but with
+    # a verified physical clearance. The walker starts five game metres beside it.
+    car_anchor = (runway_center[0] - ax * runway_len * 0.44 + right[0] * 420.0,
+                  runway_center[1] - az * runway_len * 0.44 + right[1] * 420.0)
+    walk_anchor = car_anchor
+    heli_anchor = (runway_center[0] - ax * runway_len * 0.40 + right[0] * 700.0,
+                   runway_center[1] - az * runway_len * 0.40 + right[1] * 700.0)
     plane_anchor = (runway_center[0] - ax * runway_len * 0.44,
                     runway_center[1] - az * runway_len * 0.44)
 
@@ -532,6 +536,25 @@ def build(osm_path: pathlib.Path, hgt_path: pathlib.Path, out_path: pathlib.Path
         {"type": 5, "name": "STOL light aircraft", "x": plane_anchor[0], "z": plane_anchor[1],
          "offset_x": 0.0, "offset_z": 0.0, "height": point_height(*plane_anchor) + 0.8, "yaw": heading_for(axis)},
     ]
+    spawn_by_type = {spawn["type"]: spawn for spawn in spawns}
+    spawn_world = {}
+    for spawn_type, spawn in spawn_by_type.items():
+        wx, wz = world_transform(spawn["x"], spawn["z"], runway_center, axis, airport_scale)
+        spawn_world[spawn_type] = (wx + spawn["offset_x"], wz + spawn["offset_z"])
+    hull_radii = {1: 0.95, 2: 2.6, 3: 2.4, 4: 3.4, 5: 5.5}
+    spawn_clearances = []
+    for a in range(1, 6):
+        for b in range(a + 1, 6):
+            separation = math.dist(spawn_world[a], spawn_world[b])
+            required = hull_radii[a] + hull_radii[b] + 0.5
+            if separation < required:
+                raise ValueError(f"Spawn collision risk: type {a} and {b} are {separation:.2f} m apart "
+                                 f"(need {required:.2f} m)")
+            spawn_clearances.append({"types": [a, b], "separation_m": round(separation, 2),
+                                     "minimum_m": round(required, 2)})
+    walker_car_distance = math.dist(spawn_world[1], spawn_world[2])
+    if walker_car_distance > 6.5:
+        raise ValueError(f"Walker must start within USE range of the 4x4 (got {walker_car_distance:.2f} m)")
 
     # Reuse the compile-time signature and input hashes for repeatable QA.
     def sha(path: pathlib.Path) -> str:
@@ -558,6 +581,7 @@ def build(osm_path: pathlib.Path, hgt_path: pathlib.Path, out_path: pathlib.Path
         "osm_element_count": len(elements),
         "selected_feature_counts": counts,
         "spawn_locations": [{"type": s["type"], "name": s["name"]} for s in spawns],
+        "spawn_clearances": spawn_clearances,
         "offline_runtime_data": True,
     }
     binary_sha = encode_world(out_path, lat0, lon0, runway_center, axis, runway_len,
