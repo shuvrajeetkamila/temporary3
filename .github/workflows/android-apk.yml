@@ -74,7 +74,45 @@ jobs:
           cp DATA_SOURCES.md android/assets/licenses/DATA_SOURCES.txt
 
       - name: Run JVM tests and build installable debug APK
-        run: ./gradlew --no-daemon --stacktrace :core:test :android:testDebugUnitTest :android:assembleDebug
+        run: |
+          set +e
+          ./gradlew --no-daemon --stacktrace --console=plain :core:test :android:testDebugUnitTest :android:assembleDebug > "$RUNNER_TEMP/gradle-build.log" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/gradle-build.log"
+          if [ "$status" -ne 0 ]; then
+            python - "$RUNNER_TEMP/gradle-build.log" <<'PY'
+          import pathlib, re, sys, xml.etree.ElementTree as ET
+          log = pathlib.Path(sys.argv[1]).read_text(errors="replace").splitlines()
+          interesting = [line.strip() for line in log if re.search(
+              r"(^FAILURE:|What went wrong:|Execution failed for task|^> Task .*FAILED|error:|There were failing tests)",
+              line)]
+          for line in interesting[-20:]:
+              safe = line.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Gradle build diagnostic::{safe[:900]}")
+          for root in (pathlib.Path("core/build/test-results/test"),
+                       pathlib.Path("android/build/test-results/testDebugUnitTest")):
+              for report in root.glob("TEST-*.xml"):
+                  try:
+                      suite = ET.parse(report).getroot()
+                  except ET.ParseError:
+                      continue
+                  for case in suite.iter("testcase"):
+                      failure = case.find("failure")
+                      if failure is None:
+                          continue
+                      message = " ".join((failure.get("message") or "").split())
+                      title = f"{case.get('classname')}.{case.get('name')}"
+                      print(f"::error title=JUnit test failure::{title}: {message[:900]}")
+                      trace = failure.text or ""
+                      for line in [line.strip() for line in trace.splitlines()
+                                   if "AssertionError" in line or "expected:" in line
+                                   or line.strip().startswith("at ")][:8]:
+                          safe = line.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+                          print(f"::notice title=JUnit failure trace::{safe[:900]}")
+          PY
+          fi
+          exit "$status"
 
       - name: Validate APK, package metadata, native libraries, and world payload
         run: |
