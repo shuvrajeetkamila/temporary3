@@ -49,12 +49,22 @@ jobs:
         run: python tools/fetch_sources.py
 
       - name: Compile real OSM and SRTM into offline world package
-        run: >-
-          python tools/build_geodata.py
-          --osm data/geodata/downloads/nauru_overpass.json
-          --hgt data/geodata/downloads/S01E166.hgt.gz
-          --out android/assets/compiled/world.bin
-          --manifest android/assets/compiled/manifest.json
+        run: |
+          python - <<'PY'
+          import pathlib, sys, traceback
+          sys.path.insert(0, "tools")
+          from build_geodata import build
+          try:
+              audit = build(pathlib.Path("data/geodata/downloads/nauru_overpass.json"),
+                            pathlib.Path("data/geodata/downloads/S01E166.hgt.gz"),
+                            pathlib.Path("android/assets/compiled/world.bin"),
+                            pathlib.Path("android/assets/compiled/manifest.json"))
+              print(audit)
+          except Exception as error:
+              traceback.print_exc()
+              print(f"::error title=World data compiler::{type(error).__name__}: {error}")
+              raise
+          PY
 
       - name: Package geodata provenance and license notices in the offline app
         run: |
