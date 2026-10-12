@@ -13,7 +13,7 @@ Open the Vite URL shown in the terminal. On phones, drag across the water or hol
 
 ## Build an Android APK
 
-The Android app wraps the same offline-capable game with Capacitor. The installable debug APK is built automatically on pushes to `main` or `arena/7a3bc4c5-temporary3` and can be downloaded from the **Nauru: The Game APK** artifact on the GitHub Actions run.
+The Android app wraps the same offline-capable game with Capacitor. The installable debug APK is built automatically on pushes to `main` or `arena/7a3bc4c5-temporary3`. Builds from the Arena branch also publish a downloadable APK in a GitHub prerelease; other builds are available from the **Nauru-The-Game-APK** Actions artifact.
 
 To build it locally with Android Studio / Android SDK and JDK 21 installed:
 

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
@@ -47,6 +47,20 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk release/Nauru-The-Game.apk
           test -s release/Nauru-The-Game.apk
           sha256sum release/Nauru-The-Game.apk > release/SHA256SUMS.txt
+
+      - name: Publish a downloadable APK release
+        if: github.ref == 'refs/heads/arena/7a3bc4c5-temporary3'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="nauru-android-build-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" \
+            release/Nauru-The-Game.apk \
+            release/SHA256SUMS.txt \
+            --title "Nauru: The Game — Android build ${GITHUB_RUN_NUMBER}" \
+            --notes "Installable debug APK built from commit ${GITHUB_SHA}." \
+            --prerelease \
+            --target "$GITHUB_SHA"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
