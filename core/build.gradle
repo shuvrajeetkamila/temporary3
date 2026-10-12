@@ -1,0 +1,27 @@
+plugins {
+    id 'java-library'
+}
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(17) }
+}
+
+sourceSets {
+    main {
+        java.srcDirs = ['src/main/java']
+    }
+    test {
+        java.srcDirs = ['src/test/java']
+    }
+}
+
+dependencies {
+    api 'com.badlogicgames.gdx:gdx:1.13.1'
+    api 'com.badlogicgames.gdx:gdx-bullet:1.13.1'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+tasks.withType(Test).configureEach {
+    useJUnit()
+    testLogging { events 'passed', 'skipped', 'failed' }
+}

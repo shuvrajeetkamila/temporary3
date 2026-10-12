@@ -1,0 +1,12 @@
+plugins {
+    id 'com.android.application' version '8.13.0' apply false
+}
+
+allprojects {
+    group = 'ai.nauru.countryside'
+    version = '0.1.0'
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.layout.buildDirectory
+}
