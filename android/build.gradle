@@ -57,13 +57,22 @@ dependencies {
 }
 
 tasks.register('copyAndroidNatives', Copy) {
-    from { configurations.natives.collect { zipTree(it) } }
-    into layout.buildDirectory.dir('generated/jniLibs')
-    include '**/*.so'
-    eachFile { details ->
-        if (details.path.startsWith('lib/')) details.path = details.path.substring(4)
-        else if (details.path.startsWith('jni/')) details.path = details.path.substring(4)
+    // Some libGDX native archives store their .so files at archive root. Preserve the
+    // classifier ABI directory explicitly so same-named libraries from different ABIs
+    // cannot collide when the Copy task assembles jniLibs.
+    configurations.natives.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+        def marker = 'natives-'
+        def classifier = artifact.classifier ?: ''
+        def markerIndex = classifier.lastIndexOf(marker)
+        if (markerIndex < 0) throw new GradleException("Native dependency has no ABI classifier: ${artifact.moduleVersion.id}")
+        def abi = classifier.substring(markerIndex + marker.length())
+        from(zipTree(artifact.file)) {
+            include '**/*.so'
+            eachFile { details -> details.path = "${abi}/${details.name}" }
+        }
     }
+    into layout.buildDirectory.dir('generated/jniLibs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     includeEmptyDirs = false
 }
 
