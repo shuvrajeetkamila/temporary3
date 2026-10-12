@@ -149,54 +149,22 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           script: |
-            set -eu
-            APK="artifacts/NauruTheCountryside-v0.2.0-debug.apk"
-            mkdir -p artifacts/emulator
-            LOG="artifacts/emulator/countryside-logcat.txt"
-            fail() {
-              title="$1"
-              detail=$(printf '%s' "$2" | tr '\r\n' '  ' | cut -c 1-700)
-              echo "::error title=$title::$detail"
-              exit 1
-            }
-            run_checked() {
-              label="$1"
-              shift
-              if output=$("$@" 2>&1); then
-                printf '%s\n' "$output"
-              else
-                status=$?
-                fail "$label" "$output (exit $status)"
-              fi
-            }
-            test -s "$APK" || fail "APK file missing on emulator runner" "$APK is missing or empty"
-            run_checked "ADB device readiness" adb wait-for-device
-            run_checked "ADB connected devices" adb devices -l
-            run_checked "Clear Android logcat" adb logcat -c
-            run_checked "Install APK on Android 8 emulator" adb install -r "$APK"
-            run_checked "Stop any previous game process" adb shell am force-stop ai.nauru.countryside
-            run_checked "Launch Android game activity" adb shell am start -W -n ai.nauru.countryside/.AndroidLauncher
+            adb wait-for-device
+            adb devices -l
+            test -s artifacts/NauruTheCountryside-v0.2.0-debug.apk
+            adb logcat -c
+            adb install -r artifacts/NauruTheCountryside-v0.2.0-debug.apk
+            adb shell am force-stop ai.nauru.countryside
+            adb shell am start -W -n ai.nauru.countryside/.AndroidLauncher
             sleep 20
-            if ! adb logcat -d -v brief > "$LOG" 2>&1; then
-              fail "Read Android emulator logcat" "$(cat "$LOG")"
-            fi
-            fatal_line=$(grep -Ei "FATAL EXCEPTION|Fatal signal|Could not load compiled/world.bin|WORLD STARTUP FAILED|Failed to create GLES|GdxRuntimeException|UnsatisfiedLinkError" "$LOG" | head -n 1 || true)
-            if [ -n "$fatal_line" ]; then
-              fail "Android emulator startup or offline-world error" "$fatal_line; recent log: $(tail -n 18 "$LOG")"
-            fi
-            loaded_line=$(grep -F "Loaded offline NCRW world" "$LOG" | head -n 1 || true)
-            if [ -z "$loaded_line" ]; then
-              fail "Offline world startup not confirmed" "Expected load marker absent. Recent log: $(tail -n 22 "$LOG")"
-            fi
-            pid=$(adb shell pidof ai.nauru.countryside 2>&1) || fail "Game process exited on Android 8" "$pid; recent log: $(tail -n 18 "$LOG")"
-            mkdir -p artifacts/emulator || fail "Create emulator artifact directory" "mkdir failed"
-            screenshot="artifacts/emulator/startup-api26.png"
-            screenshot_error="artifacts/emulator/screencap-error.txt"
-            if ! adb exec-out screencap -p > "$screenshot" 2> "$screenshot_error"; then
-              fail "Capture Android emulator screenshot" "$(cat "$screenshot_error")"
-            fi
-            test -s "$screenshot" || fail "Android emulator screenshot is empty" "screencap produced zero bytes"
-            printf 'Android 8 launch passed; pid=%s; screenshot bytes=%s\n' "$pid" "$(stat -c '%s' "$screenshot")"
+            mkdir -p artifacts/emulator
+            adb logcat -d -v brief > artifacts/emulator/countryside-logcat.txt
+            if grep -Ei "FATAL EXCEPTION|Fatal signal|Could not load compiled/world.bin|WORLD STARTUP FAILED|Failed to create GLES|GdxRuntimeException|UnsatisfiedLinkError" artifacts/emulator/countryside-logcat.txt; then echo "::error title=Android emulator launch failure::APK logged a fatal startup or offline-world error."; tail -n 200 artifacts/emulator/countryside-logcat.txt; exit 1; fi
+            grep -F "Loaded offline NCRW world" artifacts/emulator/countryside-logcat.txt || { echo "::error title=Offline world startup not confirmed::Expected load marker is absent from Android logcat."; tail -n 200 artifacts/emulator/countryside-logcat.txt; exit 1; }
+            adb shell pidof ai.nauru.countryside || { echo "::error title=Android game process missing::Activity process did not remain alive after launch."; tail -n 200 artifacts/emulator/countryside-logcat.txt; exit 1; }
+            adb exec-out screencap -p > artifacts/emulator/startup-api26.png
+            test -s artifacts/emulator/startup-api26.png || { echo "::error title=Android emulator screenshot missing::screencap produced an empty file."; exit 1; }
+            python -c 'from pathlib import Path; p=Path("artifacts/emulator/startup-api26.png"); assert p.read_bytes().startswith(bytes.fromhex("89504e470d0a1a0a")), "invalid PNG screenshot"'
 
       - name: Upload APK, emulator screenshot, and provenance as workflow artifact
         uses: actions/upload-artifact@v7.0.2
