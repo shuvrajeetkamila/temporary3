@@ -472,10 +472,9 @@ public final class PhysicsWorld implements Disposable {
 
     private void getBasis(btRigidBody body, Vector3 outForward, Vector3 outRight, Vector3 outUp, Vector3 outVelocity) {
         body.getWorldTransform(transform);
-        transform.getRotation(rotation);
-        outForward.set(0f, 0f, -1f).rot(rotation).nor();
-        outRight.set(1f, 0f, 0f).rot(rotation).nor();
-        outUp.set(0f, 1f, 0f).rot(rotation).nor();
+        outForward.set(0f, 0f, -1f).rot(transform).nor();
+        outRight.set(1f, 0f, 0f).rot(transform).nor();
+        outUp.set(0f, 1f, 0f).rot(transform).nor();
         outVelocity.set(body.getLinearVelocity());
     }
 

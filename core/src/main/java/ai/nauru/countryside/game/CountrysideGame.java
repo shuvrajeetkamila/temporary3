@@ -29,12 +29,7 @@ public final class CountrysideGame extends Game implements InputProcessor {
     private final Vector3 characterPosition = new Vector3();
     private final Vector3 exitPosition = new Vector3();
     private final Vector3 rightVector = new Vector3();
-    private final FixedStepClock.Step fixedStep = dt -> {
-        simTime += dt;
-        if (physics != null) physics.step(controls, mode, simTime);
-        controls.clearEdges();
-        jumpPendingForStep = false;
-    };
+    private final FixedStepClock.Step fixedStep = this::stepSimulation;
     private WorldData worldData;
     private PhysicsWorld physics;
     private SceneRenderer scene;
@@ -127,6 +122,13 @@ public final class CountrysideGame extends Game implements InputProcessor {
                         : mode == PhysicsWorld.HELICOPTER ? physics.rotorRpm() : physics.aircraftRpm(),
                 fixedClock.droppedSteps(), hudPosition.x, hudPosition.z, layout, leftX, leftY,
                 gasHeld, brakeHeld, null);
+    }
+
+    private void stepSimulation(float dt) {
+        simTime += dt;
+        if (physics != null) physics.step(controls, mode, simTime);
+        controls.clearEdges();
+        jumpPendingForStep = false;
     }
 
     private void readControls(float frameDt) {
@@ -419,6 +421,10 @@ public final class CountrysideGame extends Game implements InputProcessor {
     @Override public boolean touchUp(int screenX, int screenY, int pointer, int button) {
         if (pointer >= 0 && pointer < pointers.length) pointers[pointer].active = false;
         return true;
+    }
+
+    @Override public boolean touchCancelled(int screenX, int screenY, int pointer, int button) {
+        return touchUp(screenX, screenY, pointer, button);
     }
 
     @Override public boolean touchDragged(int screenX, int screenY, int pointer) {
