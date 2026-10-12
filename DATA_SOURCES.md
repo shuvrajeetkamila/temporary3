@@ -18,4 +18,6 @@
 
 All source coordinates are projected from WGS84 into a local East-North-Up tangent approximation centered on the coastline. Runtime `WorldTransform` applies the 1:25 island compression and the documented smooth airport hero-zone expansion. The original elevation samples remain in metres vertically. The transformed runway target is 780 m, and the compiler rejects a result outside 600–900 m. The source and transformed runway measurements appear in the generated audit manifest.
 
+OSM coastline ways are stitched by shared endpoints. Where the source has a small endpoint mismatch, the compiler permits a straight join only up to 50 m and records the join count and lengths in `assets/compiled/manifest.json`; larger gaps fail the build rather than inventing an island outline. The land outline still follows the fetched OSM coastline geometry (this is not a generic oval or raster substitute).
+
 The APK contains only the compact compiled world, not raw SRTM or unfiltered OSM files. Build outputs include a per-input checksum manifest so the exact upstream snapshot used for a release is auditable.

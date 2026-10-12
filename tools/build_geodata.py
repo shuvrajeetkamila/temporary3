@@ -20,6 +20,7 @@ GLOBAL_SCALE = 0.04
 TARGET_RUNWAY_M = 780.0
 AIRPORT_INNER_M = 250.0
 AIRPORT_OUTER_M = 1_000.0
+COASTLINE_MAX_JOIN_GAP_M = 50.0
 GRID_SIZE = 97
 MAX_FEATURES = 10_000
 MAX_POINTS_PER_FEATURE = 20_000
@@ -109,68 +110,106 @@ def coordinate_tuple(point: dict) -> tuple[float, float]:
     return float(point["lat"]), float(point["lon"])
 
 
-def stitch_coastline(segments: list[list[tuple[float, float]]]) -> list[tuple[float, float]]:
-    """Join OSM coastline ways into the largest closed ring; coordinates are lat/lon."""
+def _distance_m(a: tuple[float, float], b: tuple[float, float]) -> float:
+    mean_lat = math.radians((a[0] + b[0]) * 0.5)
+    north_m = (a[0] - b[0]) * 111_320.0
+    east_m = (a[1] - b[1]) * 111_320.0 * math.cos(mean_lat)
+    return math.hypot(east_m, north_m)
+
+
+def stitch_coastline_with_report(
+        segments: list[list[tuple[float, float]]]) -> tuple[list[tuple[float, float]], list[float]]:
+    """Join coastline ways, allowing only short (<=50 m) missing-data gaps.
+
+    Exact shared endpoints are preferred. A small gap is bridged as a straight segment only
+    when no exact continuation exists; a larger break is rejected rather than guessed.
+    """
     pending = [s[:] for s in segments if len(s) >= 2]
     closed: list[list[tuple[float, float]]] = []
-    eps = 2e-6
+    joined_gaps_m: list[float] = []
+    eps_m = 0.25
     while pending:
         ring = pending.pop(0)
-        changed = True
-        while changed and len(ring) < 100_000:
-            changed = False
-            if math.dist(ring[0], ring[-1]) <= eps:
-                closed.append(ring)
+        while len(ring) < 100_000:
+            if _distance_m(ring[0], ring[-1]) <= eps_m:
                 break
+
+            # Prefer topologically exact endpoint matches in all four orientations.
+            match = None
             for i, seg in enumerate(pending):
-                if math.dist(ring[-1], seg[0]) <= eps:
-                    ring.extend(seg[1:])
-                elif math.dist(ring[-1], seg[-1]) <= eps:
-                    ring.extend(reversed(seg[:-1]))
-                elif math.dist(ring[0], seg[-1]) <= eps:
-                    ring = seg[:-1] + ring
-                elif math.dist(ring[0], seg[0]) <= eps:
-                    ring = list(reversed(seg[1:])) + ring
-                else:
-                    continue
+                if _distance_m(ring[-1], seg[0]) <= eps_m:
+                    match = (i, "append", seg[1:])
+                elif _distance_m(ring[-1], seg[-1]) <= eps_m:
+                    match = (i, "append", list(reversed(seg[:-1])))
+                elif _distance_m(ring[0], seg[-1]) <= eps_m:
+                    match = (i, "prepend", seg[:-1])
+                elif _distance_m(ring[0], seg[0]) <= eps_m:
+                    match = (i, "prepend", list(reversed(seg[1:])))
+                if match:
+                    break
+            if match:
+                i, direction, points = match
+                ring = ring + points if direction == "append" else points + ring
                 pending.pop(i)
-                changed = True
+                continue
+
+            # A few OSM coastline endpoints can be digitized without a shared node. Find
+            # the closest legal endpoint pair and preserve both endpoints to bridge that gap.
+            nearest = None
+            for i, seg in enumerate(pending):
+                candidates = (
+                    (_distance_m(ring[-1], seg[0]), i, "append", seg),
+                    (_distance_m(ring[-1], seg[-1]), i, "append", list(reversed(seg))),
+                    (_distance_m(ring[0], seg[-1]), i, "prepend", seg),
+                    (_distance_m(ring[0], seg[0]), i, "prepend", list(reversed(seg))),
+                )
+                for candidate in candidates:
+                    if nearest is None or candidate[0] < nearest[0]:
+                        nearest = candidate
+            closure_gap_m = _distance_m(ring[0], ring[-1])
+            if (closure_gap_m <= COASTLINE_MAX_JOIN_GAP_M
+                    and (nearest is None or closure_gap_m <= nearest[0])):
+                # Keep the slight closure repair explicit in the compiled outline.
+                ring.append(ring[0])
+                joined_gaps_m.append(closure_gap_m)
                 break
-        else:
-            pass
-        if len(ring) >= 4 and math.dist(ring[0], ring[-1]) <= eps:
+            if nearest is None or nearest[0] > COASTLINE_MAX_JOIN_GAP_M:
+                break
+            gap_m, i, direction, points = nearest
+            ring = ring + points if direction == "append" else points + ring
+            pending.pop(i)
+            joined_gaps_m.append(gap_m)
+
+        if len(ring) >= 4 and _distance_m(ring[0], ring[-1]) <= eps_m:
             closed.append(ring)
+
     if not closed:
         endpoints = []
-        segment_report = []
         for index, segment in enumerate(segments):
-            if len(segment) < 2:
-                continue
-            start, end = segment[0], segment[-1]
-            endpoints.extend(((start[0], start[1], index, "start"),
-                              (end[0], end[1], index, "end")))
-            segment_report.append({"index": index, "points": len(segment),
-                                   "start": [round(start[0], 7), round(start[1], 7)],
-                                   "end": [round(end[0], 7), round(end[1], 7)]})
+            if len(segment) >= 2:
+                endpoints.extend(((segment[0], index, "start"),
+                                  (segment[-1], index, "end")))
         nearest = []
-        for i, a in enumerate(endpoints):
-            for b in endpoints[i + 1:]:
-                if a[2] == b[2]:
-                    continue
-                mean_lat = math.radians((a[0] + b[0]) * 0.5)
-                north_m = (a[0] - b[0]) * 111_320.0
-                east_m = (a[1] - b[1]) * 111_320.0 * math.cos(mean_lat)
-                nearest.append((math.hypot(east_m, north_m), a, b))
+        for i, (a, seg_a, end_a) in enumerate(endpoints):
+            for b, seg_b, end_b in endpoints[i + 1:]:
+                if seg_a != seg_b:
+                    nearest.append((_distance_m(a, b), a, seg_a, end_a, b, seg_b, end_b))
         nearest.sort(key=lambda item: item[0])
-        nearest_report = [{"gap_m": round(gap, 2),
-                           "a": [round(a[0], 7), round(a[1], 7), a[2], a[3]],
-                           "b": [round(b[0], 7), round(b[1], 7), b[2], b[3]]}
-                          for gap, a, b in nearest[:12]]
-        raise ValueError("OSM coastline did not form a closed ring; "
-                         f"segments={len(segment_report)}, points={sum(s['points'] for s in segment_report)}, "
-                         f"segments_report={segment_report[:24]}, nearest_endpoint_gaps={nearest_report}")
+        report = [{"gap_m": round(gap, 2),
+                   "a": [round(a[0], 7), round(a[1], 7), seg_a, end_a],
+                   "b": [round(b[0], 7), round(b[1], 7), seg_b, end_b]}
+                  for gap, a, seg_a, end_a, b, seg_b, end_b in nearest if gap > eps_m][:8]
+        raise ValueError("OSM response did not contain a closed Nauru coastline ring within the "
+                         f"{COASTLINE_MAX_JOIN_GAP_M:.0f} m endpoint-join limit; "
+                         f"segments={len(segments)}, nearest_nonzero_gaps={report}")
     # The island outline is the ring with the largest absolute projected area.
-    return max(closed, key=lambda ring: abs(polygon_area(ring)))
+    outline = max(closed, key=lambda ring: abs(polygon_area(ring)))
+    return outline, joined_gaps_m
+
+
+def stitch_coastline(segments: list[list[tuple[float, float]]]) -> list[tuple[float, float]]:
+    """Join OSM coast ways and return the largest closed ring."""
+    return stitch_coastline_with_report(segments)[0]
 
 
 def runway_axis(points: list[tuple[float, float]]) -> tuple[tuple[float, float], tuple[float, float], float]:
@@ -384,7 +423,7 @@ def build(osm_path: pathlib.Path, hgt_path: pathlib.Path, out_path: pathlib.Path
     lat0 = sum(p[0] for p in raw_coast) / len(raw_coast)
     lon0 = sum(p[1] for p in raw_coast) / len(raw_coast)
     features, coast_segments = decode_elements(osm, lat0, lon0)
-    raw_outline = stitch_coastline(coast_segments)
+    raw_outline, coastline_gap_joins = stitch_coastline_with_report(coast_segments)
     outline = [project(lat, lon, lat0, lon0) for lat, lon in raw_outline]
     if math.dist(outline[0], outline[-1]) < 0.05:
         outline = outline[:-1]
@@ -513,6 +552,9 @@ def build(osm_path: pathlib.Path, hgt_path: pathlib.Path, out_path: pathlib.Path
         "terrain": {"grid_width": GRID_SIZE, "grid_height": GRID_SIZE,
                     "source": "SRTM 1 arc-second, one degree HGT tile S01E166", "land_samples": sum(mask)},
         "coastline_points": len(outline),
+        "coastline_topology": {"gap_join_count": len(coastline_gap_joins),
+                               "joined_gaps_m": [round(gap, 2) for gap in coastline_gap_joins],
+                               "maximum_allowed_gap_m": COASTLINE_MAX_JOIN_GAP_M},
         "osm_element_count": len(elements),
         "selected_feature_counts": counts,
         "spawn_locations": [{"type": s["type"], "name": s["name"]} for s in spawns],

@@ -14,6 +14,7 @@ from build_geodata import (
     read_srtm,
     sample_srtm,
     stitch_coastline,
+    stitch_coastline_with_report,
     world_transform,
     build,
     unproject,
@@ -66,6 +67,21 @@ class WorldTransformTests(unittest.TestCase):
         ring = stitch_coastline(segments)
         self.assertGreaterEqual(len(ring), 4)
         self.assertLessEqual(abs(ring[0][0] - ring[-1][0]) + abs(ring[0][1] - ring[-1][1]), 2e-6)
+
+    def test_coastline_stitch_bridges_and_reports_small_osm_endpoint_gap(self):
+        # OSM sometimes has distinct endpoints a few metres apart on a mostly continuous coast.
+        segments = [
+            [(0.0, 0.0), (0.0, 0.01)],
+            [(0.01, 0.01), (0.0, 0.01)],
+            [(0.01, 0.01), (0.01, 0.0)],
+            [(0.0101, 0.0), (0.0, 0.0)],
+        ]
+        ring, gaps = stitch_coastline_with_report(segments)
+        self.assertAlmostEqual(ring[0][0], ring[-1][0], places=7)
+        self.assertAlmostEqual(ring[0][1], ring[-1][1], places=7)
+        self.assertEqual(len(gaps), 1)
+        self.assertGreater(gaps[0], 10.0)
+        self.assertLess(gaps[0], 12.0)
 
     def test_srtm_hgt_sample_uses_north_to_south_rows(self):
         # A 1201x1201 synthetic tile exercises HGT endianness and the N-to-S row convention.
