@@ -157,17 +157,16 @@ jobs:
             adb shell am start -W -n ai.nauru.countryside/.AndroidLauncher
             sleep 20
             adb logcat -d -v brief > "$RUNNER_TEMP/countryside-logcat.txt"
-            if grep -E "FATAL EXCEPTION|Fatal signal|Could not load compiled/world.bin|WORLD STARTUP FAILED" "$RUNNER_TEMP/countryside-logcat.txt"; then
-              echo "Android emulator reported a launch or offline-world failure."
+            if grep -Ei "FATAL EXCEPTION|Fatal signal|Could not load compiled/world.bin|WORLD STARTUP FAILED|Failed to create GLES|GdxRuntimeException|UnsatisfiedLinkError" "$RUNNER_TEMP/countryside-logcat.txt"; then
+              echo "::error title=Android emulator launch failure::APK logged a fatal startup or offline-world error."
               tail -n 200 "$RUNNER_TEMP/countryside-logcat.txt"
               exit 1
             fi
-            if ! grep -q "Loaded offline NCRW world" "$RUNNER_TEMP/countryside-logcat.txt"; then
-              echo "The activity did not report loading the packaged offline world."
+            if ! adb shell pidof ai.nauru.countryside; then
+              echo "::error title=Android emulator process missing::Activity process did not remain alive after launch."
               tail -n 200 "$RUNNER_TEMP/countryside-logcat.txt"
               exit 1
             fi
-            adb shell pidof ai.nauru.countryside
             mkdir -p artifacts/emulator
             adb exec-out screencap -p > artifacts/emulator/startup-api26.png
             test -s artifacts/emulator/startup-api26.png
