@@ -151,7 +151,8 @@ jobs:
           script: |
             set -eu
             APK="artifacts/NauruTheCountryside-v0.2.0-debug.apk"
-            LOG="$RUNNER_TEMP/countryside-logcat.txt"
+            mkdir -p artifacts/emulator
+            LOG="artifacts/emulator/countryside-logcat.txt"
             fail() {
               title="$1"
               detail=$(printf '%s' "$2" | tr '\r\n' '  ' | cut -c 1-700)
@@ -190,8 +191,9 @@ jobs:
             pid=$(adb shell pidof ai.nauru.countryside 2>&1) || fail "Game process exited on Android 8" "$pid; recent log: $(tail -n 18 "$LOG")"
             mkdir -p artifacts/emulator || fail "Create emulator artifact directory" "mkdir failed"
             screenshot="artifacts/emulator/startup-api26.png"
-            if ! adb exec-out screencap -p > "$screenshot" 2> "$RUNNER_TEMP/screencap-error.txt"; then
-              fail "Capture Android emulator screenshot" "$(cat "$RUNNER_TEMP/screencap-error.txt")"
+            screenshot_error="artifacts/emulator/screencap-error.txt"
+            if ! adb exec-out screencap -p > "$screenshot" 2> "$screenshot_error"; then
+              fail "Capture Android emulator screenshot" "$(cat "$screenshot_error")"
             fi
             test -s "$screenshot" || fail "Android emulator screenshot is empty" "screencap produced zero bytes"
             printf 'Android 8 launch passed; pid=%s; screenshot bytes=%s\n' "$pid" "$(stat -c '%s' "$screenshot")"
@@ -203,6 +205,7 @@ jobs:
           path: |
             artifacts/NauruTheCountryside-v0.2.0-debug.apk
             artifacts/emulator/startup-api26.png
+            artifacts/emulator/countryside-logcat.txt
             artifacts/NauruTheCountryside-v0.2.0-debug.apk.sha256
             artifacts/build-metadata.json
             android/assets/compiled/manifest.json
