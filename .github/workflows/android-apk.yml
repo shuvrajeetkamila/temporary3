@@ -1,0 +1,59 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - arena/7a3bc4c5-temporary3
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    name: Build installable debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Build web game and sync Android project
+        run: |
+          npm ci
+          npm run build
+          npx cap sync android
+
+      - name: Assemble APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Prepare APK download
+        run: |
+          mkdir -p release
+          cp android/app/build/outputs/apk/debug/app-debug.apk release/Nauru-The-Game.apk
+          test -s release/Nauru-The-Game.apk
+          sha256sum release/Nauru-The-Game.apk > release/SHA256SUMS.txt
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nauru-The-Game-APK
+          path: |
+            release/Nauru-The-Game.apk
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 90

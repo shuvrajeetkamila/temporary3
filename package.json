@@ -1,0 +1,21 @@
+{
+  "name": "nauru-the-game",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A bright, mobile-first reef-rescue arcade game set around Nauru.",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "android:sync": "npm run build && cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
+    "vite": "^8.3.4"
+  }
+}

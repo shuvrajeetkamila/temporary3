@@ -1,0 +1,8 @@
+{
+  "appId": "com.nauru.islandrescue",
+  "appName": "Nauru: The Game",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  }
+}
