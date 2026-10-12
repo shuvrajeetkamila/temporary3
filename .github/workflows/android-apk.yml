@@ -148,23 +148,24 @@ jobs:
           arch: x86_64
           profile: pixel_2
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          # android-emulator-runner executes each script line in a separate shell; keep commands self-contained.
           script: |
-            adb wait-for-device
-            adb devices -l
-            test -s artifacts/NauruTheCountryside-v0.2.0-debug.apk
-            adb logcat -c
-            adb install -r artifacts/NauruTheCountryside-v0.2.0-debug.apk
-            adb shell am force-stop ai.nauru.countryside
-            adb shell am start -W -n ai.nauru.countryside/.AndroidLauncher
+            adb wait-for-device || { echo "::error title=ADB readiness failed::adb wait-for-device returned nonzero."; exit 1; }
+            adb devices -l || { echo "::error title=ADB device listing failed::adb devices returned nonzero."; exit 1; }
+            test -s artifacts/NauruTheCountryside-v0.2.0-debug.apk || { echo "::error title=APK not found on emulator runner::Expected artifacts/NauruTheCountryside-v0.2.0-debug.apk to be non-empty."; exit 1; }
+            adb logcat -c || { echo "::error title=Could not clear logcat::adb logcat -c returned nonzero."; exit 1; }
+            adb install -r artifacts/NauruTheCountryside-v0.2.0-debug.apk || { echo "::error title=APK install failed on Android 8::adb install returned nonzero."; exit 1; }
+            adb shell am force-stop ai.nauru.countryside || { echo "::error title=Could not stop prior game process::am force-stop returned nonzero."; exit 1; }
+            adb shell am start -W -n ai.nauru.countryside/.AndroidLauncher || { echo "::error title=Game activity launch failed::am start returned nonzero."; exit 1; }
             sleep 20
-            mkdir -p artifacts/emulator
-            adb logcat -d -v brief > artifacts/emulator/countryside-logcat.txt
+            mkdir -p artifacts/emulator || { echo "::error title=Could not create emulator artifacts directory::mkdir failed."; exit 1; }
+            adb logcat -d -v brief > artifacts/emulator/countryside-logcat.txt || { echo "::error title=Could not collect Android logcat::adb logcat returned nonzero."; exit 1; }
             if grep -Ei "FATAL EXCEPTION|Fatal signal|Could not load compiled/world.bin|WORLD STARTUP FAILED|Failed to create GLES|GdxRuntimeException|UnsatisfiedLinkError" artifacts/emulator/countryside-logcat.txt; then echo "::error title=Android emulator launch failure::APK logged a fatal startup or offline-world error."; tail -n 200 artifacts/emulator/countryside-logcat.txt; exit 1; fi
             grep -F "Loaded offline NCRW world" artifacts/emulator/countryside-logcat.txt || { echo "::error title=Offline world startup not confirmed::Expected load marker is absent from Android logcat."; tail -n 200 artifacts/emulator/countryside-logcat.txt; exit 1; }
             adb shell pidof ai.nauru.countryside || { echo "::error title=Android game process missing::Activity process did not remain alive after launch."; tail -n 200 artifacts/emulator/countryside-logcat.txt; exit 1; }
-            adb exec-out screencap -p > artifacts/emulator/startup-api26.png
+            adb exec-out screencap -p > artifacts/emulator/startup-api26.png || { echo "::error title=Android screenshot capture failed::adb screencap returned nonzero."; exit 1; }
             test -s artifacts/emulator/startup-api26.png || { echo "::error title=Android emulator screenshot missing::screencap produced an empty file."; exit 1; }
-            python -c 'from pathlib import Path; p=Path("artifacts/emulator/startup-api26.png"); assert p.read_bytes().startswith(bytes.fromhex("89504e470d0a1a0a")), "invalid PNG screenshot"'
+            python -c 'from pathlib import Path; p=Path("artifacts/emulator/startup-api26.png"); assert p.read_bytes().startswith(bytes.fromhex("89504e470d0a1a0a")), "invalid PNG screenshot"' || { echo "::error title=Invalid emulator screenshot::Captured file does not have a PNG signature."; exit 1; }
 
       - name: Upload APK, emulator screenshot, and provenance as workflow artifact
         uses: actions/upload-artifact@v7.0.2
